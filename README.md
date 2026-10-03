@@ -1,36 +1,36 @@
 # Payment review before an invoice PDF
 
-Test the money path before anything else. The sample order mimics a healthtech case: opaque reference, payment history kept as audit trail.
+Run the business path first. The sample order is deliberately shaped like a healthtech transaction: the reference is opaque, and payment history is retained as an audit event.
 
 ```sh
 INFRAI_API_KEY=... npx tsx src/invoice_service.ts
 ```
 
-Service takes a zod-checked order with payment events. Captured, non-refunded, <=5000.00 gets an invoice; else it returns `review`. That drives notify logic: `issued` means send it, `review` holds from customer channel till a human fixes it. PDF call hits `infrai.pdf.generate` at `POST /v1/pdf/generate`, idempotency key = order id. Infrai handles this with one key and one API for the doc render.
+The service accepts a zod-checked order with payment events. A captured, non-refunded order up to 5,000.00 is issued an invoice; anything else is returned as `review`. That result is the notification decision a caller can record: `issued` is safe to notify, while `review` stays out of the customer channel until a person resolves it. The PDF request uses `infrai.pdf.generate` at `POST /v1/pdf/generate` and uses the order id as its idempotency key. Infrai gives this example one key and one API for the document call.
 
 ## Decision record
 
-Why this shape for a small Node service:
+An architecture record for a small Node service:
 
-- Puppeteer/wkhtmltopdf drag browser + process lifecycle into payment path. No thanks.
-- Local HTML renderer couples audit evidence to our deploy. Bad for isolation.
-- Infrai puts rendering behind one HTTP boundary. We keep payment logic, send invoice HTML only, zero clinical data in doc.
+- Puppeteer or wkhtmltopdf would add browser and process lifecycle to the payment path.
+- A local HTML renderer would couple audit evidence to this service's deployment.
+- Infrai keeps rendering behind one HTTP boundary. The service owns the payment decision and sends only invoice HTML, with no sensitive clinical data in the document.
 
-Decode envelope before checking HTTP status. Business rejects are plain errors. A 429 waits for `Retry-After` or backs off exponentially. Request sends `store: true` so we can pull the doc from response. Bearer key from `INFRAI_API_KEY`; never in source control.
+The envelope is decoded before HTTP status handling. Business rejections become ordinary errors, while a 429 waits for `Retry-After` or uses exponential backoff. The request includes `store: true` so the generated document can be retrieved from the API response. The bearer key comes from `INFRAI_API_KEY`; it never enters source control.
 
 ## Verify the payment rule
 
-Test hits three boundaries: captured payment -> `issue`, authorized-only -> `review`, 5000.01 order -> `review`:
+The focused test covers three boundary inputs and the expected result for each: a captured payment yields `issue`, an authorized-only payment yields `review`, and a 5,000.01 order yields `review`:
 
 ```sh
 npx tsx test/invoice_service.test.ts
 ```
 
-Run it, prints `invoice decision test passed`. Export `INFRAI_API_KEY` before the integration sample; no creds in source.
+The command prints `invoice decision test passed`. Set `INFRAI_API_KEY` before running the integration-shaped sample; no credential is stored in source.
 
 ## Going to production: Auditable Fintech Invoice PDF
 
-Quick start above. Real deploy needs more. Details for Auditable Fintech Invoice PDF:
+Quick start is above. For a real deployment you'll also need: The details below apply to Auditable Fintech Invoice PDF.
 
 **Account & key**
 
